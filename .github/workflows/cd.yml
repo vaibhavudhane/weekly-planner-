@@ -1,0 +1,71 @@
+name: CD — Deploy to Azure
+
+on:
+  push:
+    branches:
+      - main # only deploys when code reaches main
+
+jobs:
+  deploy-api:
+    name: Deploy .NET API to Azure App Service
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "8.0.x"
+
+      - name: Restore dependencies
+        run: dotnet restore
+
+      - name: Build & Test before deploy
+        run: |
+          dotnet build --configuration Release
+          dotnet test --configuration Release --verbosity normal
+
+      - name: Publish API
+        run: dotnet publish WeeklyPlanner.API/WeeklyPlanner.API.csproj -c Release -o ./publish
+
+      - name: Deploy to Azure App Service
+        uses: azure/webapps-deploy@v3
+        with:
+          app-name: "weekly-planner-api-2024"
+          publish-profile: ${{ secrets.AZURE_API_PUBLISH_PROFILE }}
+          package: ./publish
+
+  deploy-ui:
+    name: Deploy Angular to Azure Static Web Apps
+    runs-on: ubuntu-latest
+    needs: deploy-api # only runs after API deploys successfully
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Install Angular dependencies
+        run: |
+          cd weekly-planner-ui
+          npm install
+
+      - name: Build Angular for production
+        run: |
+          cd weekly-planner-ui
+          npx ng build --configuration production
+
+      - name: Deploy to Azure Static Web Apps
+        uses: Azure/static-web-apps-deploy@v1
+        with:
+          azure_static_web_apps_api_token: ${{ secrets.AZURE_STATIC_WEB_APPS_TOKEN }}
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          action: "upload"
+          app_location: "weekly-planner-ui"
+          output_location: "dist/weekly-planner-ui/browser"

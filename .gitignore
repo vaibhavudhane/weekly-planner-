@@ -1,0 +1,17 @@
+# .NET build artifacts
+bin/
+obj/
+*.user
+
+# Never commit local secrets or connection strings
+WeeklyPlanner.API/appsettings.Development.json
+**/appsettings.Local.json
+.env
+.env.*
+
+# Angular
+weekly-planner-ui/node_modules/
+weekly-planner-ui/dist/
+
+# Test results
+TestResults/

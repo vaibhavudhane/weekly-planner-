@@ -1,9 +1,10 @@
 name: CD — Deploy to Azure
 
 on:
-  push:
-    branches:
-      - main # only deploys when code reaches main
+  workflow_dispatch: # manual only — uncomment push trigger on Day 4 after Azure setup
+  # push:
+  #   branches:
+  #     - main
 
 jobs:
   deploy-api:
@@ -40,7 +41,7 @@ jobs:
   deploy-ui:
     name: Deploy Angular to Azure Static Web Apps
     runs-on: ubuntu-latest
-    needs: deploy-api # only runs after API deploys successfully
+    needs: deploy-api
 
     steps:
       - name: Checkout code

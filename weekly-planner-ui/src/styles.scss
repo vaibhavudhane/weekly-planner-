@@ -1,1 +1,144 @@
-/* You can add global styles to this file, and also import other style files */
+/* Import Angular Material theme — already set by ng add */
+@use '@angular/material' as mat;
+
+/* ── Global base styles ─────────────────────────────────────────────────── */
+body {
+  font-family: Arial, sans-serif;
+  margin: 0;
+  background: #f5f5f5;
+  transition:
+    background 0.3s,
+    color 0.3s;
+}
+
+.loading-center {
+  text-align: center;
+  padding: 60px;
+  p {
+    color: #666;
+    margin-top: 12px;
+  }
+}
+
+.error-card {
+  background: #ffebee !important;
+  margin-bottom: 16px;
+  mat-icon {
+    vertical-align: middle;
+    margin-right: 8px;
+  }
+}
+
+.frozen-banner {
+  background: #e3f2fd !important;
+  margin-bottom: 20px;
+  mat-icon {
+    vertical-align: middle;
+    margin-right: 8px;
+  }
+}
+
+.over-limit {
+  color: #c00000 !important;
+  font-weight: bold;
+}
+
+.backlog-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 16px;
+  margin: 16px 0;
+}
+
+.backlog-item {
+  cursor: pointer;
+  transition: box-shadow 0.2s;
+}
+.backlog-item:hover {
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.2);
+}
+
+.plan-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin: 8px 0;
+  .task-title {
+    flex: 1;
+    font-weight: 500;
+  }
+}
+
+.progress-card {
+  margin-bottom: 16px;
+}
+.category-bars .cat-row {
+  margin: 8px 0;
+}
+.week-card {
+  padding: 16px;
+  margin-bottom: 20px;
+}
+.submit-row {
+  margin-top: 20px;
+}
+.add-form {
+  margin-bottom: 20px;
+}
+.header-row,
+.backlog-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+.filter-row {
+  display: flex;
+  gap: 8px;
+  margin: 16px 0;
+  flex-wrap: wrap;
+}
+.percent-row {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.week-manager-container,
+.backlog-container,
+.dashboard-container {
+  padding: 20px;
+}
+.active-link {
+  background: rgba(255, 255, 255, 0.2) !important;
+  border-radius: 4px;
+}
+
+/* ── DARK THEME ──────────────────────────────────────────────────────────── */
+body.dark-theme {
+  background: #121212 !important;
+  color: #e0e0e0 !important;
+
+  .mat-toolbar {
+    background: #1e1e1e !important;
+  }
+  .mat-card {
+    background: #1e1e1e !important;
+    color: #e0e0e0 !important;
+  }
+  .mat-expansion-panel {
+    background: #1e1e1e !important;
+    color: #e0e0e0 !important;
+  }
+  .mat-table {
+    background: #1e1e1e !important;
+  }
+  .mat-row:hover {
+    background: #2c2c2c !important;
+  }
+  .frozen-banner {
+    background: #1a2a3a !important;
+  }
+  .error-card {
+    background: #3a1a1a !important;
+  }
+}

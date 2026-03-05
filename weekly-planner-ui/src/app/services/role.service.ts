@@ -1,31 +1,23 @@
-import { Injectable, signal, computed } from '@angular/core';
+import { Injectable } from '@angular/core';
 import { Member } from '../models';
 
-/// <summary>
-/// Manages the currently active member/role.
-/// Uses Angular 21 signals for reactive state.
-/// </summary>
 @Injectable({ providedIn: 'root' })
 export class RoleService {
   private members: Member[] = [
-    { id: 1, name: 'Team Lead', isLead: true },
-    { id: 2, name: 'Alice', isLead: false },
-    { id: 3, name: 'Bob', isLead: false },
+    { id: 1, name: 'Team Lead', isLead: true, isActive: true },
+    { id: 2, name: 'Alice', isLead: false, isActive: true },
+    { id: 3, name: 'Bob', isLead: false, isActive: true },
   ];
 
-  private currentMember = signal<Member>(this.members[0]);
-  currentMember$ = computed(() => this.currentMember());
+  private current = this.members[0];
 
-  getMembers(): Member[] {
+  getAll() {
     return this.members;
   }
-  getCurrent(): Member {
-    return this.currentMember();
+  getCurrent() {
+    return this.current;
   }
-  switchTo(m: Member): void {
-    this.currentMember.set(m);
-  }
-  isLead(): boolean {
-    return this.currentMember().isLead;
+  setCurrent(id: number) {
+    this.current = this.members.find((m) => m.id === id) ?? this.members[0];
   }
 }

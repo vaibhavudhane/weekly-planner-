@@ -1,16 +1,11 @@
 import { inject } from '@angular/core';
 import { CanActivateFn, Router } from '@angular/router';
-import { RoleService } from '../services/role.service';
+import { AppStateService } from '../services/app-state.service';
 
-/// <summary>
-/// Blocks non-lead members from accessing /dashboard route.
-/// Redirects them to /planning instead.
-/// </summary>
 export const leadGuard: CanActivateFn = () => {
-  const roleService = inject(RoleService);
+  const state = inject(AppStateService);
   const router = inject(Router);
-
-  if (roleService.isLead()) return true;
-  router.navigate(['/planning']);
+  if (state.isLead()) return true;
+  router.navigate(['/']);
   return false;
 };

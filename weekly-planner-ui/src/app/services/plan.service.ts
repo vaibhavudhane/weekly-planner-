@@ -1,34 +1,29 @@
-import { Injectable, inject } from '@angular/core';
+import { Injectable } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
+import { PlanEntry, WeeklyPlan } from '../models';
 import { environment } from '../../environments/environment';
-import { PlanEntry, WeeklyPlan, DashboardEntry } from '../models';
 
 @Injectable({ providedIn: 'root' })
 export class PlanService {
-  private http = inject(HttpClient);
   private api = environment.apiUrl;
+  constructor(private http: HttpClient) {}
 
   getPlan(memberId: number, weekCycleId: number) {
     return this.http.get<WeeklyPlan>(`${this.api}/plan/${memberId}/${weekCycleId}`);
   }
+
   submitPlan(memberId: number, weekCycleId: number, entries: PlanEntry[]) {
-    // Send only the fields the API needs — strip Angular-side properties
-    const cleanEntries = entries.map((e) => ({
-      backlogItemId: e.backlogItemId,
-      plannedHours: e.plannedHours,
-      progressPercent: 0,
-      actualHours: null,
-    }));
-    return this.http.post<WeeklyPlan>(`${this.api}/plan/submit`, {
-      memberId,
-      weekCycleId,
-      entries: cleanEntries,
+    return this.http.post<WeeklyPlan>(`${this.api}/plan`, { memberId, weekCycleId, entries });
+  }
+
+  updateProgress(planEntryId: number, progressPercent: number, actualHours: number) {
+    return this.http.put(`${this.api}/plan/entry/${planEntryId}/progress`, {
+      progressPercent,
+      actualHours,
     });
   }
-  updateProgress(entryId: number, progressPercent: number, actualHours?: number) {
-    return this.http.put(`${this.api}/plan/progress/${entryId}`, { progressPercent, actualHours });
-  }
-  getDashboard(weekCycleId: number) {
-    return this.http.get<DashboardEntry[]>(`${this.api}/plan/week/${weekCycleId}/dashboard`);
+
+  getAllPlansForWeek(weekCycleId: number) {
+    return this.http.get<WeeklyPlan[]>(`${this.api}/plan/week/${weekCycleId}`);
   }
 }

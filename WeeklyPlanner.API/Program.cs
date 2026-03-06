@@ -6,22 +6,33 @@ using WeeklyPlanner.Infrastructure.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// ---------------- DATABASE CONNECTION ----------------
+
 var connectionString =
     builder.Configuration.GetConnectionString("DefaultConnection") ??
-    builder.Configuration["ConnectionStrings:DefaultConnection"];
+    builder.Configuration["SQLAZURECONNSTR_DefaultConnection"];
 
-Console.WriteLine("DB CONNECTION: " + connectionString);
+if (string.IsNullOrEmpty(connectionString))
+{
+    throw new Exception("Database connection string not found.");
+}
 
-// Database
+Console.WriteLine("DB CONNECTION FOUND");
+
+// Register DbContext
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlServer(connectionString));
 
-// Services
+
+// ---------------- SERVICES ----------------
+
 builder.Services.AddScoped<IBacklogService, BacklogService>();
 builder.Services.AddScoped<IWeekCycleService, WeekCycleService>();
 builder.Services.AddScoped<IPlanService, PlanService>();
 
-// Controllers + Swagger
+
+// ---------------- CONTROLLERS ----------------
+
 builder.Services.AddControllers()
     .AddJsonOptions(options =>
     {
@@ -29,25 +40,54 @@ builder.Services.AddControllers()
             System.Text.Json.Serialization.ReferenceHandler.IgnoreCycles;
     });
 
+
+// ---------------- SWAGGER ----------------
+
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
     c.SwaggerDoc("v1", new() { Title = "Weekly Planner API", Version = "v1" }));
 
-// CORS
-builder.Services.AddCors(options => options.AddDefaultPolicy(policy =>
-    policy.WithOrigins(
-        "http://localhost:4200",
-        "https://localhost:4200",
-        "https://YOUR-APP.azurestaticapps.net"
-    ).AllowAnyHeader().AllowAnyMethod()));
+
+// ---------------- CORS ----------------
+
+builder.Services.AddCors(options =>
+{
+    options.AddDefaultPolicy(policy =>
+    {
+        policy.WithOrigins(
+            "http://localhost:4200",
+            "https://localhost:4200",
+            "https://YOUR-APP.azurestaticapps.net"
+        )
+        .AllowAnyHeader()
+        .AllowAnyMethod();
+    });
+});
+
+
+// ---------------- BUILD APP ----------------
 
 var app = builder.Build();
 
-// Middleware pipeline
+
+// ---------------- APPLY DATABASE MIGRATIONS ----------------
+
+using (var scope = app.Services.CreateScope())
+{
+    var db = scope.ServiceProvider.GetRequiredService<AppDbContext>();
+    db.Database.Migrate();
+}
+
+
+// ---------------- MIDDLEWARE PIPELINE ----------------
+
 app.UseMiddleware<ExceptionMiddleware>();
+
 app.UseSwagger();
 app.UseSwaggerUI();
+
 app.UseCors();
+
 app.MapControllers();
 
 app.Run();

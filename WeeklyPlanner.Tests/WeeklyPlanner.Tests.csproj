@@ -7,6 +7,12 @@
 
     <IsPackable>false</IsPackable>
     <IsTestProject>true</IsTestProject>
+
+
+    <ExcludeFromCodeCoverage>true</ExcludeFromCodeCoverage>
+  <CollectCoverage>true</CollectCoverage>
+  <CoverletOutputFormat>cobertura</CoverletOutputFormat>
+  <Exclude>[*]WeeklyPlanner.Infrastructure.Migrations.*,[*]WeeklyPlanner.Infrastructure.Data.AppDbContextFactory,[*]WeeklyPlanner.API.Program</Exclude>
   </PropertyGroup>
 
   <ItemGroup>
@@ -33,6 +39,7 @@
   <ItemGroup>
     <ProjectReference Include="..\WeeklyPlanner.Core\WeeklyPlanner.Core.csproj" />
     <ProjectReference Include="..\WeeklyPlanner.Infrastructure\WeeklyPlanner.Infrastructure.csproj" />
+    <ProjectReference Include="..\WeeklyPlanner.API\WeeklyPlanner.API.csproj" />
   </ItemGroup>
 
 </Project>

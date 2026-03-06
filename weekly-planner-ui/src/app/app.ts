@@ -165,13 +165,11 @@ import type { BacklogEntry, TaskAssignment } from './services/app-state.service'
                   s.isLead() ? 'Team Lead' : 'Team Member'
                 }}</span>
               </p>
-
               @if (!s.activeCycle() && s.isLead()) {
                 <div class="notification is-app-info mb-4">
                   No planning weeks yet. Click "Start a New Week" to begin!
                 </div>
               }
-
               <div class="columns is-multiline">
                 @if (s.isLead() && !s.activeCycle()) {
                   <div class="column is-6">
@@ -507,8 +505,14 @@ import type { BacklogEntry, TaskAssignment } from './services/app-state.service'
                         View & Edit
                       </button>
                       @if (s.isLead() && (e.status === 'AVAILABLE' || e.status === 'COMPLETED')) {
-                        <button class="button is-small btn-danger" (click)="s.archiveEntry(e.id)">
+                        <button
+                          class="button is-small btn-danger mr-1"
+                          (click)="s.archiveEntry(e.id)"
+                        >
                           Archive
+                        </button>
+                        <button class="button is-small btn-danger" (click)="deleteEntry(e.id)">
+                          Delete
                         </button>
                       }
                     </div>
@@ -716,8 +720,13 @@ import type { BacklogEntry, TaskAssignment } from './services/app-state.service'
                   [class]="s.pctSum() === 100 ? 'has-text-success' : 'has-text-danger'"
                   class="has-text-weight-bold"
                 >
-                  Total: {{ s.pctSum() }}% <span *ngIf="s.pctSum() !== 100">(must be 100%)</span
-                  ><span *ngIf="s.pctSum() === 100">✓</span>
+                  Total: {{ s.pctSum() }}%
+                  @if (s.pctSum() !== 100) {
+                    <span>(must be 100%)</span>
+                  }
+                  @if (s.pctSum() === 100) {
+                    <span>✓</span>
+                  }
                 </p>
                 @if (s.pctSum() === 100 && s.cycleForm().memberIds.length > 0) {
                   <div class="columns mt-2">
@@ -1344,7 +1353,7 @@ import type { BacklogEntry, TaskAssignment } from './services/app-state.service'
                 </div>
               }
               @if (
-                s.dashAllAssignments().every(t=>t.hoursCompleted===0) && s.dashCycle()?.state==='FROZEN'
+                s.dashAllAssignments().every(t=>t.hoursCompleted===0)&&s.dashCycle()?.state==='FROZEN'
               ) {
                 <div class="notification is-app-info mb-4">No one has reported progress yet.</div>
               }
@@ -1669,8 +1678,8 @@ import type { BacklogEntry, TaskAssignment } from './services/app-state.service'
                 >
                   <div class="columns is-vcentered is-mobile">
                     <div class="column">
-                      <strong>Week of {{ c.planningDate }}</strong>
-                      <span
+                      <strong>Week of {{ c.planningDate }}</strong
+                      ><span
                         class="tag ml-2"
                         [class]="c.state === 'COMPLETED' ? 'is-success' : 'is-info'"
                         >{{ c.state }}</span
@@ -1679,8 +1688,7 @@ import type { BacklogEntry, TaskAssignment } from './services/app-state.service'
                     <div class="column is-narrow">
                       <span class="text-secondary"
                         >{{ c.participatingMemberIds.length }} members</span
-                      >
-                      <button class="button is-small btn-secondary ml-2">View Details →</button>
+                      ><button class="button is-small btn-secondary ml-2">View Details →</button>
                     </div>
                   </div>
                 </div>
@@ -1838,5 +1846,19 @@ export class App implements OnInit {
   runConfirm() {
     this.s.confirmAction()();
     this.s.confirmModal.set(false);
+  }
+
+  deleteEntry(id: string) {
+    this.s.showConfirm(
+      'Delete this item?',
+      'This will permanently remove it. This cannot be undone.',
+      () => {
+        this.s.backlogEntries.update((es) => es.filter((e) => e.id !== id));
+        this.s.save();
+        this.s.showToast('Deleted!');
+      },
+      'Yes, Delete It',
+      true,
+    );
   }
 }

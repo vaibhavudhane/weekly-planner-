@@ -193,4 +193,26 @@ public class WeekCycleServiceTests
         var result = await new WeekCycleService(db).GetCurrentAsync();
         result!.Id.Should().Be(2);
     }
+
+    [Fact]
+public async Task GetAll_ReturnsAllCycles_OrderedByPlanningDateDescending()
+{
+    var db = GetDb();
+    db.WeekCycles.AddRange(
+        new WeekCycle { Id = 1, PlanningDate = DateTime.Today.AddDays(-7),
+            WeekStartDate = DateTime.Today.AddDays(-7), WeekEndDate = DateTime.Today.AddDays(-2) },
+        new WeekCycle { Id = 2, PlanningDate = DateTime.Today,
+            WeekStartDate = DateTime.Today, WeekEndDate = DateTime.Today.AddDays(5) });
+    await db.SaveChangesAsync();
+    var result = (await new WeekCycleService(db).GetAllAsync()).ToList();
+    result.Should().HaveCount(2);
+    result[0].Id.Should().Be(2);
+}
+
+[Fact]
+public async Task GetAll_ReturnsEmpty_WhenNoCyclesExist()
+{
+    var result = await new WeekCycleService(GetDb()).GetAllAsync();
+    result.Should().BeEmpty();
+}
 }

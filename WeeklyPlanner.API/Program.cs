@@ -6,13 +6,16 @@ using WeeklyPlanner.Infrastructure.Services;
 
 var builder = WebApplication.CreateBuilder(args);
 
-var conn = builder.Configuration.GetConnectionString("DefaultConnection");
-Console.WriteLine("DEBUG CONNECTION STRING: " + conn);
+var connectionString =
+    builder.Configuration.GetConnectionString("DefaultConnection") ??
+    builder.Configuration["ConnectionStrings:DefaultConnection"];
+
+Console.WriteLine("DB CONNECTION: " + connectionString);
 
 
 // ── Database ──────────────────────────────────────────────────────────────
 builder.Services.AddDbContext<AppDbContext>(options =>
-    options.UseSqlServer(conn));
+    options.UseSqlServer(connectionString));
 
 // ── Register Services (Dependency Injection) ──────────────────────────────
 builder.Services.AddScoped<IBacklogService, BacklogService>();

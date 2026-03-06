@@ -81,18 +81,31 @@ public class PlanService : IPlanService
             throw new InvalidOperationException("A plan already exists for this member and week.");
 
         // All validations passed — create and freeze the plan
-        var plan = new WeeklyPlan
-        {
-            MemberId    = memberId,
-            WeekCycleId = weekCycleId,
-            IsFrozen    = true,
-            FrozenAt    = DateTime.UtcNow,
-            PlanEntries = entries
-        };
+       // All validations passed --- create and freeze the plan
+var plan = new WeeklyPlan
+{
+    MemberId = memberId,
+    WeekCycleId = weekCycleId,
+    IsFrozen = true,
+    FrozenAt = DateTime.UtcNow
+};
 
-        _db.WeeklyPlans.Add(plan);
-        await _db.SaveChangesAsync();
-        return plan;
+_db.WeeklyPlans.Add(plan);
+await _db.SaveChangesAsync(); // Save plan first to get its ID
+
+// Now attach entries with the correct WeeklyPlanId
+foreach (var entry in entries)
+{
+    entry.WeeklyPlanId = plan.Id;
+    _db.PlanEntries.Add(entry);
+}
+await _db.SaveChangesAsync();
+
+// Reload with navigation properties for the response
+return await _db.WeeklyPlans
+    .Include(p => p.Member)
+    .Include(p => p.PlanEntries).ThenInclude(e => e.BacklogItem)
+    .FirstAsync(p => p.Id == plan.Id);
     }
 
     /// <summary>
@@ -121,6 +134,20 @@ public class PlanService : IPlanService
         entry.LastUpdated     = DateTime.UtcNow;
         await _db.SaveChangesAsync();
     }
+
+    public async Task<bool> DeletePlanAsync(int memberId, int weekCycleId)
+{
+    var plan = await _db.WeeklyPlans
+        .Include(p => p.PlanEntries)
+        .FirstOrDefaultAsync(p => p.MemberId == memberId && p.WeekCycleId == weekCycleId);
+    
+    if (plan is null) return false;
+    
+    _db.PlanEntries.RemoveRange(plan.PlanEntries);
+    _db.WeeklyPlans.Remove(plan);
+    await _db.SaveChangesAsync();
+    return true;
+}
 
     public async Task<IEnumerable<WeeklyPlan>> GetAllPlansForWeekAsync(int weekCycleId) =>
         await _db.WeeklyPlans

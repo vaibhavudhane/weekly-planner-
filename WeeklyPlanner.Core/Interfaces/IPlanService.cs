@@ -6,4 +6,6 @@ public interface IPlanService
     Task<WeeklyPlan> SubmitPlanAsync(int memberId, int weekCycleId, List<PlanEntry> entries);
     Task UpdateProgressAsync(int planEntryId, decimal progressPercent, decimal? actualHours);
     Task<IEnumerable<WeeklyPlan>> GetAllPlansForWeekAsync(int weekCycleId);
+
+    Task<bool> DeletePlanAsync(int memberId, int weekCycleId);
 }

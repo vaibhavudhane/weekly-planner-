@@ -17,7 +17,12 @@ builder.Services.AddScoped<IWeekCycleService, WeekCycleService>();
 builder.Services.AddScoped<IPlanService, PlanService>();
 
 // ── Controllers + Swagger ─────────────────────────────────────────────────
-builder.Services.AddControllers();
+builder.Services.AddControllers()
+    .AddJsonOptions(options =>
+    {
+        options.JsonSerializerOptions.ReferenceHandler = 
+            System.Text.Json.Serialization.ReferenceHandler.IgnoreCycles;
+    });
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(c =>
     c.SwaggerDoc("v1", new() { Title = "Weekly Planner API", Version = "v1" }));
@@ -47,7 +52,7 @@ using (var scope = app.Services.CreateScope())
 }
 
 // ── Middleware pipeline — ORDER MATTERS ───────────────────────────────────
-app.UseMiddleware<ExceptionMiddleware>();  // must be first
+app.UseMiddleware<ExceptionMiddleware>();  
 app.UseSwagger();
 app.UseSwaggerUI();
 app.UseCors();

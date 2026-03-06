@@ -15,3 +15,22 @@ weekly-planner-ui/dist/
 
 # Test results
 TestResults/
+
+
+
+
+
+# Rider
+.idea/
+
+# VS Code
+.vscode/
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+
+# EF Migrations snapshots (optional keep migrations folder)

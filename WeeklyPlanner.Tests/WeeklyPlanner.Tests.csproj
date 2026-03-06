@@ -33,6 +33,7 @@
   <ItemGroup>
     <ProjectReference Include="..\WeeklyPlanner.Core\WeeklyPlanner.Core.csproj" />
     <ProjectReference Include="..\WeeklyPlanner.Infrastructure\WeeklyPlanner.Infrastructure.csproj" />
+    <ProjectReference Include="..\WeeklyPlanner.API\WeeklyPlanner.API.csproj" />
   </ItemGroup>
 
 </Project>

@@ -45,7 +45,7 @@ using (var scope = app.Services.CreateScope())
 }
 
 // ── Middleware pipeline — ORDER MATTERS ───────────────────────────────────
-app.UseMiddleware<ExceptionMiddleware>();  // must be first
+app.UseMiddleware<ExceptionMiddleware>();  
 app.UseSwagger();
 app.UseSwaggerUI();
 app.UseCors();

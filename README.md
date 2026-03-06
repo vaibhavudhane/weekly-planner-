@@ -257,7 +257,7 @@ dotnet run
 
 ```bash
 cd weekly-planner-ui
-npm install --legacy-peer-deps
+npm install 
 ng serve
 # App: http://localhost:4200
 ```
@@ -274,6 +274,7 @@ ng serve
 # From repo root (API must be stopped)
 dotnet test
 ```
+you can view backend test report at - WeeklyPlanner.Tests/coverage.cobertura.xml
 
 | Test File                     | What it covers                            |
 | ----------------------------- | ----------------------------------------- |
@@ -302,12 +303,11 @@ dotnet test
 cd weekly-planner-ui
 npx vitest run --coverage
 ```
-
 - 301/301 tests passing (100%)
 - All edge cases tested
 - Stress tested (1000 members, 500 items)
 
-````
+
 | Details | Value |
 |---|---|
 | Test runner | Vitest v4.0.18 |

@@ -57,7 +57,7 @@ builder.Services.AddCors(options =>
         policy.WithOrigins(
             "http://localhost:4200",
             "https://localhost:4200",
-            "https://YOUR-APP.azurestaticapps.net"
+            "https://kind-flower-09f143d00.1.azurestaticapps.net"
         )
         .AllowAnyHeader()
         .AllowAnyMethod();

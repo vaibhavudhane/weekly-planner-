@@ -8,11 +8,10 @@ var builder = WebApplication.CreateBuilder(args);
 
 var connectionString =
     builder.Configuration.GetConnectionString("DefaultConnection") ??
-    builder.Configuration["ConnectionStrings:DefaultConnection"];
+    builder.Configuration["SQLAZURECONNSTR_DefaultConnection"];
 
 Console.WriteLine("DB CONNECTION: " + connectionString);
 
-// Database
 builder.Services.AddDbContext<AppDbContext>(options =>
     options.UseSqlServer(connectionString));
 

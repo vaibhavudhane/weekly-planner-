@@ -42,7 +42,7 @@
     "@angular/build": "^21.1.4",
     "@angular/cli": "^21.1.4",
     "@angular/compiler-cli": "^21.1.0",
-    "@angular/platform-browser-dynamic": "^21.2.1",
+    "@angular/platform-browser-dynamic": "^21.1.0",
     "@testing-library/angular": "^19.1.0",
     "@types/jest": "^30.0.0",
     "@vitest/coverage-v8": "^4.0.18",

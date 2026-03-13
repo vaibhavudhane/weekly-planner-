@@ -9,7 +9,6 @@
 |                 | URL                                                                                                          |
 | --------------- | ------------------------------------------------------------------------------------------------------------ |
 | 🖥️ **Frontend** | [https://kind-flower-09f143d00.1.azurestaticapps.net/](https://kind-flower-09f143d00.1.azurestaticapps.net/) |
-| 🔗 **API**      | [https://weeklyplanner-api-vaibhav.azurewebsites.net](https://weeklyplanner-api-vaibhav.azurewebsites.net)   |
 | 📖 **Swagger**  | [/swagger](https://weeklyplanner-api-vaibhav.azurewebsites.net/swagger)                                      |
 
 ---

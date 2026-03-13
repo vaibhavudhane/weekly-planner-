@@ -1,5 +1,7 @@
-import { Injectable, signal } from '@angular/core';
+import { Injectable, signal, inject } from '@angular/core';
 import { HttpClient } from '@angular/common/http';
+import { firstValueFrom } from 'rxjs';
+import { environment } from '../../environments/environment';
 
 export type AppView =
   | 'setup'
@@ -19,33 +21,41 @@ export type AppView =
   | 'taskDrill'
   | 'pastCycles';
 
+// ─── Local state interfaces (frontend workflow) ───────────────────────────────
+
 export interface Member {
-  id: string;
+  id: string; // local UUID (maps to dbId for API calls)
+  dbId?: number; // Azure SQL integer ID
   name: string;
   isLead: boolean;
   isActive: boolean;
   createdAt: string;
 }
+
 export interface BacklogEntry {
-  id: string;
+  id: string; // local UUID
+  dbId?: number; // Azure SQL integer ID
   title: string;
   description: string;
-  category: string;
+  category: string; // 'CLIENT_FOCUSED' | 'TECH_DEBT' | 'R_AND_D'
   status: string;
   estimatedEffort: number | null;
   createdBy: string;
   createdAt: string;
 }
+
 export interface PlanningCycle {
-  id: string;
+  id: string; // local UUID
+  dbId?: number; // Azure SQL integer ID
   planningDate: string;
   executionStartDate: string;
   executionEndDate: string;
-  state: string;
+  state: string; // 'SETUP' | 'PLANNING' | 'FROZEN' | 'COMPLETED'
   participatingMemberIds: string[];
   teamCapacity: number;
   createdAt: string;
 }
+
 export interface CategoryAllocation {
   id: string;
   cycleId: string;
@@ -53,15 +63,19 @@ export interface CategoryAllocation {
   percentage: number;
   budgetHours: number;
 }
+
 export interface MemberPlan {
   id: string;
+  dbId?: number;
   cycleId: string;
   memberId: string;
   isReady: boolean;
   totalPlannedHours: number;
 }
+
 export interface TaskAssignment {
   id: string;
+  dbId?: number; // PlanEntry ID from backend
   memberPlanId: string;
   backlogEntryId: string;
   committedHours: number;
@@ -69,6 +83,7 @@ export interface TaskAssignment {
   hoursCompleted: number;
   createdAt: string;
 }
+
 export interface ProgressUpdate {
   id: string;
   taskAssignmentId: string;
@@ -80,10 +95,13 @@ export interface ProgressUpdate {
   note: string;
   updatedBy: string;
 }
+
 export interface AppSettings {
   setupComplete: boolean;
   dataVersion: number;
 }
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function uid(): string {
   return crypto.randomUUID
@@ -93,6 +111,7 @@ function uid(): string {
         return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16);
       });
 }
+
 function lsGet<T>(k: string, d: T): T {
   try {
     const v = localStorage.getItem(k);
@@ -101,6 +120,7 @@ function lsGet<T>(k: string, d: T): T {
     return d;
   }
 }
+
 function lsSet(k: string, v: any) {
   try {
     localStorage.setItem(k, JSON.stringify(v));
@@ -109,8 +129,24 @@ function lsSet(k: string, v: any) {
   }
 }
 
+// Map frontend category string to backend integer
+function catToInt(cat: string): number {
+  return cat === 'CLIENT_FOCUSED' ? 1 : cat === 'TECH_DEBT' ? 2 : 3;
+}
+
+// Map backend integer to frontend category string
+function intToCat(n: number): string {
+  return n === 1 ? 'CLIENT_FOCUSED' : n === 2 ? 'TECH_DEBT' : 'R_AND_D';
+}
+
+// ─── Service ──────────────────────────────────────────────────────────────────
+
 @Injectable({ providedIn: 'root' })
 export class AppStateService {
+  private http = inject(HttpClient);
+  private api = environment.apiUrl;
+
+  // ── UI signals ──────────────────────────────────────────────────────────────
   theme = signal<'light' | 'dark'>(lsGet('wpt_theme', 'light'));
   view = signal<AppView>('identity');
   toast = signal('');
@@ -118,6 +154,8 @@ export class AppStateService {
   appSettings = signal<AppSettings>(
     lsGet('wpt_appSettings', { setupComplete: false, dataVersion: 1 }),
   );
+
+  // ── Data signals (persisted to localStorage + Azure SQL) ────────────────────
   teamMembers = signal<Member[]>(lsGet('wpt_teamMembers', []));
   backlogEntries = signal<BacklogEntry[]>(lsGet('wpt_backlogEntries', []));
   planningCycles = signal<PlanningCycle[]>(lsGet('wpt_planningCycles', []));
@@ -125,6 +163,8 @@ export class AppStateService {
   memberPlans = signal<MemberPlan[]>(lsGet('wpt_memberPlans', []));
   taskAssignments = signal<TaskAssignment[]>(lsGet('wpt_taskAssignments', []));
   progressUpdates = signal<ProgressUpdate[]>(lsGet('wpt_progressUpdates', []));
+
+  // ── UI form signals ──────────────────────────────────────────────────────────
   currentUserId = signal<string | null>(null);
   setupMembers = signal<Member[]>([]);
   setupName = signal('');
@@ -175,8 +215,7 @@ export class AppStateService {
   importFileName = signal('');
   importError = signal('');
 
-  constructor(private http: HttpClient) {}
-
+  // ── Init ─────────────────────────────────────────────────────────────────────
   init() {
     if (!this.appSettings().setupComplete) {
       this.view.set('setup');
@@ -191,12 +230,7 @@ export class AppStateService {
     }
   }
 
-  toggleTheme() {
-    const t = this.theme() === 'dark' ? 'light' : 'dark';
-    this.theme.set(t);
-    lsSet('wpt_theme', t);
-  }
-
+  // ── Local save ───────────────────────────────────────────────────────────────
   save() {
     lsSet('wpt_appSettings', this.appSettings());
     lsSet('wpt_teamMembers', this.teamMembers());
@@ -208,18 +242,28 @@ export class AppStateService {
     lsSet('wpt_progressUpdates', this.progressUpdates());
   }
 
+  // ── UI helpers ───────────────────────────────────────────────────────────────
+  toggleTheme() {
+    const t = this.theme() === 'dark' ? 'light' : 'dark';
+    this.theme.set(t);
+    lsSet('wpt_theme', t);
+  }
+
   goHome() {
     this.view.set('hub');
     this.dashCycleId.set(this.activeCycle()?.id || null);
   }
+
   showToast(m: string) {
     this.toast.set(m);
     setTimeout(() => this.toast.set(''), 3000);
   }
+
   showError(m: string) {
     this.errorMsg.set(m);
     setTimeout(() => this.errorMsg.set(''), 5000);
   }
+
   showConfirm(
     title: string,
     text: string,
@@ -237,35 +281,45 @@ export class AppStateService {
     this.confirmModal.set(true);
   }
 
+  // ── Member helpers ───────────────────────────────────────────────────────────
   activeMembers() {
     return this.teamMembers().filter((m) => m.isActive);
   }
+
   getMember(id: string | null) {
     return this.teamMembers().find((m) => m.id === id) || null;
   }
+
   currentUserName() {
     return this.getMember(this.currentUserId())?.name || '';
   }
+
   isLead() {
     return this.getMember(this.currentUserId())?.isLead || false;
   }
+
+  // ── Cycle helpers ────────────────────────────────────────────────────────────
   activeCycle() {
     return (
       this.planningCycles().find((c) => ['SETUP', 'PLANNING', 'FROZEN'].includes(c.state)) || null
     );
   }
+
   frozenCycle() {
     return this.planningCycles().find((c) => c.state === 'FROZEN') || this.activeCycle();
   }
+
   isParticipating() {
     const c = this.activeCycle();
     return c ? c.participatingMemberIds.includes(this.currentUserId()!) : false;
   }
+
   catLabel(c: string) {
     return (
       ({ CLIENT_FOCUSED: 'Client Focused', TECH_DEBT: 'Tech Debt', R_AND_D: 'R&D' } as any)[c] || c
     );
   }
+
   statusLabel(s: string) {
     return (
       (
@@ -285,6 +339,7 @@ export class AppStateService {
     this.view.set('hub');
   }
 
+  // ── Setup ────────────────────────────────────────────────────────────────────
   addSetupMember() {
     this.setupError.set('');
     const n = this.setupName().trim();
@@ -308,7 +363,8 @@ export class AppStateService {
     ]);
     this.setupName.set('');
   }
-  finishSetup() {
+
+  async finishSetup() {
     if (this.setupMembers().length === 0) {
       this.setupError.set('Please add at least one team member.');
       return;
@@ -317,9 +373,24 @@ export class AppStateService {
       this.setupError.set('Please pick one person as the Team Lead.');
       return;
     }
-    this.teamMembers.set(this.setupMembers());
+
+    // ── Persist members to Azure SQL ──────────────────────────────────────────
+    const savedMembers: Member[] = [];
+    for (const m of this.setupMembers()) {
+      try {
+        const res = await firstValueFrom(
+          this.http.post<any>(`${this.api}/Members`, { name: m.name, isLead: m.isLead }),
+        );
+        savedMembers.push({ ...m, dbId: res.id });
+      } catch {
+        savedMembers.push(m); // fallback: keep local if API fails
+      }
+    }
+
+    this.teamMembers.set(savedMembers);
     this.appSettings.update((s) => ({ ...s, setupComplete: true }));
     this.save();
+
     if (this.teamMembers().length === 1) {
       this.currentUserId.set(this.teamMembers()[0].id);
       this.view.set('hub');
@@ -327,9 +398,11 @@ export class AppStateService {
       this.view.set('identity');
     }
   }
+
   makeSetupLead(id: string) {
     this.setupMembers.update((ms) => ms.map((m) => ({ ...m, isLead: m.id === id })));
   }
+
   removeSetupMember(id: string) {
     this.setupMembers.update((ms) => {
       const f = ms.filter((m) => m.id !== id);
@@ -338,7 +411,8 @@ export class AppStateService {
     });
   }
 
-  addTeamMember() {
+  // ── Team management ──────────────────────────────────────────────────────────
+  async addTeamMember() {
     this.teamError.set('');
     const n = this.newMemberName().trim();
     if (!n) {
@@ -353,14 +427,31 @@ export class AppStateService {
       this.teamError.set('This name is already used.');
       return;
     }
-    this.teamMembers.update((ms) => [
-      ...ms,
-      { id: uid(), name: n, isLead: false, isActive: true, createdAt: new Date().toISOString() },
-    ]);
+
+    const newMember: Member = {
+      id: uid(),
+      name: n,
+      isLead: false,
+      isActive: true,
+      createdAt: new Date().toISOString(),
+    };
+
+    // ── Persist to Azure SQL ──────────────────────────────────────────────────
+    try {
+      const res = await firstValueFrom(
+        this.http.post<any>(`${this.api}/Members`, { name: n, isLead: false }),
+      );
+      newMember.dbId = res.id;
+    } catch {
+      /* fallback: use local only */
+    }
+
+    this.teamMembers.update((ms) => [...ms, newMember]);
     this.newMemberName.set('');
     this.save();
     this.showToast('Team member added!');
   }
+
   saveEditMember(id: string) {
     const n = this.editingMemberVal().trim();
     if (!n) {
@@ -376,11 +467,13 @@ export class AppStateService {
     this.save();
     this.showToast('Name updated!');
   }
+
   makeLead(id: string) {
     this.teamMembers.update((ms) => ms.map((m) => ({ ...m, isLead: m.id === id })));
     this.save();
     this.showToast('Team Lead changed!');
   }
+
   deactivateMember(id: string) {
     const ac = this.activeCycle();
     if (ac && ac.participatingMemberIds.includes(id)) {
@@ -401,15 +494,18 @@ export class AppStateService {
       true,
     );
   }
+
   reactivateMember(id: string) {
     this.teamMembers.update((ms) => ms.map((m) => (m.id === id ? { ...m, isActive: true } : m)));
     this.save();
     this.showToast('Member reactivated!');
   }
 
+  // ── Backlog ──────────────────────────────────────────────────────────────────
   getEntry(id: string) {
     return this.backlogEntries().find((e) => e.id === id) || null;
   }
+
   filteredBacklog() {
     let entries = this.backlogEntries();
     const f = this.blFilter();
@@ -427,6 +523,7 @@ export class AppStateService {
     }
     return entries.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
   }
+
   startEditEntry(e: BacklogEntry) {
     this.editEntry.set(e);
     this.backlogForm.set({
@@ -438,7 +535,8 @@ export class AppStateService {
     this.backlogError.set('');
     this.view.set('backlogEdit');
   }
-  saveBacklogEntry() {
+
+  async saveBacklogEntry() {
     this.backlogError.set('');
     const f = this.backlogForm();
     if (!f.title.trim()) {
@@ -459,33 +557,71 @@ export class AppStateService {
       this.backlogError.set('Please enter hours in half-hour steps.');
       return;
     }
+
     if (this.editEntry()) {
+      // ── Update existing entry ───────────────────────────────────────────────
+      const existing = this.editEntry()!;
       this.backlogEntries.update((es) =>
         es.map((e) =>
-          e.id === this.editEntry()!.id
+          e.id === existing.id
             ? { ...e, title: f.title.trim(), description: f.description, estimatedEffort: eff }
             : e,
         ),
       );
+      // Sync to backend if it has a dbId
+      if (existing.dbId) {
+        try {
+          await firstValueFrom(
+            this.http.put(`${this.api}/backlog/${existing.dbId}`, {
+              id: existing.dbId,
+              title: f.title.trim(),
+              description: f.description,
+              category: catToInt(existing.category),
+              isActive: existing.status !== 'ARCHIVED',
+              estimatedHours: eff,
+            }),
+          );
+        } catch {
+          /* continue with local */
+        }
+      }
     } else {
-      this.backlogEntries.update((es) => [
-        ...es,
-        {
-          id: uid(),
-          title: f.title.trim(),
-          description: f.description,
-          category: f.category,
-          status: 'AVAILABLE',
-          estimatedEffort: eff,
-          createdBy: this.currentUserId()!,
-          createdAt: new Date().toISOString(),
-        },
-      ]);
+      // ── Create new entry ────────────────────────────────────────────────────
+      const newEntry: BacklogEntry = {
+        id: uid(),
+        title: f.title.trim(),
+        description: f.description,
+        category: f.category,
+        status: 'AVAILABLE',
+        estimatedEffort: eff,
+        createdBy: this.currentUserId()!,
+        createdAt: new Date().toISOString(),
+      };
+
+      // Persist to Azure SQL
+      try {
+        const res = await firstValueFrom(
+          this.http.post<any>(`${this.api}/backlog`, {
+            title: newEntry.title,
+            description: newEntry.description,
+            category: catToInt(newEntry.category),
+            isActive: true,
+            estimatedHours: eff,
+          }),
+        );
+        newEntry.dbId = res.id;
+      } catch {
+        /* fallback: local only */
+      }
+
+      this.backlogEntries.update((es) => [...es, newEntry]);
     }
+
     this.save();
     this.showToast(this.editEntry() ? 'Changes saved!' : 'Backlog item saved!');
     this.view.set('backlog');
   }
+
   archiveEntry(id: string) {
     const e = this.getEntry(id)!;
     if (e.status === 'IN_PLAN') {
@@ -495,10 +631,26 @@ export class AppStateService {
     this.showConfirm(
       'Archive "' + e.title + '"?',
       'It will be moved to the archived list.',
-      () => {
+      async () => {
         this.backlogEntries.update((es) =>
           es.map((x) => (x.id === id ? { ...x, status: 'ARCHIVED' } : x)),
         );
+        // Sync to backend
+        if (e.dbId) {
+          try {
+            await firstValueFrom(
+              this.http.put(`${this.api}/backlog/${e.dbId}`, {
+                id: e.dbId,
+                title: e.title,
+                description: e.description,
+                category: catToInt(e.category),
+                isActive: false,
+              }),
+            );
+          } catch {
+            /* continue */
+          }
+        }
         this.save();
         this.showToast('Archived!');
       },
@@ -507,24 +659,29 @@ export class AppStateService {
     );
   }
 
+  // ── Week cycle helpers ───────────────────────────────────────────────────────
   isTuesday(d: string) {
     if (!d) return false;
     return new Date(d + 'T12:00:00').getDay() === 2;
   }
+
   addDays(d: string, n: number) {
     const dt = new Date(d + 'T12:00:00');
     dt.setDate(dt.getDate() + n);
     return dt.toISOString().slice(0, 10);
   }
+
   getNextTuesday() {
     const d = new Date();
     while (d.getDay() !== 2) d.setDate(d.getDate() + 1);
     return d.toISOString().slice(0, 10);
   }
+
   pctSum() {
     const f = this.cycleForm();
     return (parseInt(f.pctClient) || 0) + (parseInt(f.pctTech) || 0) + (parseInt(f.pctRD) || 0);
   }
+
   calcBudget(cat: string) {
     const f = this.cycleForm();
     const cap = f.memberIds.length * 30;
@@ -545,16 +702,39 @@ export class AppStateService {
     }
     return raw[cat];
   }
-  startNewWeek() {
+
+  // ── Start new week — creates WeekCycle in Azure SQL ──────────────────────────
+  async startNewWeek() {
     if (this.activeCycle()) {
       this.showError('There is already a week being planned.');
       return;
     }
     const d = this.getNextTuesday();
+
+    // Create WeekCycle in Azure SQL first
+    let dbId: number | undefined;
+    try {
+      const res = await firstValueFrom(
+        this.http.post<any>(`${this.api}/WeekCycle`, {
+          planningDate: d,
+          weekStartDate: this.addDays(d, 1),
+          weekEndDate: this.addDays(d, 6),
+          category1Percent: 0,
+          category2Percent: 0,
+          category3Percent: 0,
+          isActive: true,
+        }),
+      );
+      dbId = res.id;
+    } catch {
+      /* continue with local */
+    }
+
     this.planningCycles.update((cs) => [
       ...cs,
       {
         id: uid(),
+        dbId,
         planningDate: d,
         executionStartDate: this.addDays(d, 1),
         executionEndDate: this.addDays(d, 6),
@@ -574,7 +754,9 @@ export class AppStateService {
     this.save();
     this.view.set('cycleSetup');
   }
-  openPlanning() {
+
+  // ── Open planning — sets percentages in Azure SQL ────────────────────────────
+  async openPlanning() {
     this.cycleError.set('');
     const f = this.cycleForm();
     if (f.memberIds.length === 0) {
@@ -589,7 +771,24 @@ export class AppStateService {
       this.cycleError.set('Please pick a Tuesday.');
       return;
     }
+
     const c = this.activeCycle()!;
+
+    // Update percentages in Azure SQL
+    if (c.dbId) {
+      try {
+        await firstValueFrom(
+          this.http.put(`${this.api}/WeekCycle/${c.dbId}/percentages`, {
+            cat1: parseInt(f.pctClient),
+            cat2: parseInt(f.pctTech),
+            cat3: parseInt(f.pctRD),
+          }),
+        );
+      } catch {
+        /* continue */
+      }
+    }
+
     this.planningCycles.update((cs) =>
       cs.map((x) =>
         x.id !== c.id
@@ -635,6 +834,7 @@ export class AppStateService {
     this.goHome();
   }
 
+  // ── Plan helpers ─────────────────────────────────────────────────────────────
   myPlan() {
     const c = this.activeCycle();
     return c
@@ -642,19 +842,23 @@ export class AppStateService {
           null
       : null;
   }
+
   myAssignments() {
     const p = this.myPlan();
     return p ? this.taskAssignments().filter((t) => t.memberPlanId === p.id) : [];
   }
+
   myPlannedHours() {
     return this.myAssignments().reduce((s, t) => s + t.committedHours, 0);
   }
+
   getCatBudget(cat: string) {
     const c = this.activeCycle();
     if (!c) return 0;
     const a = this.categoryAllocations().find((x) => x.cycleId === c.id && x.category === cat);
     return a ? a.budgetHours : 0;
   }
+
   getCatClaimed(cat: string) {
     const c = this.activeCycle();
     if (!c) return 0;
@@ -667,6 +871,7 @@ export class AppStateService {
       )
       .reduce((s, t) => s + t.committedHours, 0);
   }
+
   toggleReady() {
     const p = this.myPlan();
     if (p) {
@@ -703,12 +908,14 @@ export class AppStateService {
       return true;
     });
   }
+
   startClaim(e: BacklogEntry) {
     this.claimEntry.set(e);
     this.claimHours.set(0);
     this.claimError.set('');
     this.claimModal.set(true);
   }
+
   submitClaim() {
     this.claimError.set('');
     const h = this.claimHours();
@@ -757,9 +964,10 @@ export class AppStateService {
     );
     this.save();
     this.claimModal.set(false);
-    this.showToast('Added! ' + e.title + ' — ' + h + 'h');
+    this.showToast('Added! ' + e.title + ' – ' + h + 'h');
     this.view.set('planning');
   }
+
   saveAssignHours(taId: string) {
     this.assignError.set('');
     const ta = this.taskAssignments().find((t) => t.id === taId)!;
@@ -806,6 +1014,7 @@ export class AppStateService {
     this.save();
     this.showToast('Hours updated!');
   }
+
   removeAssignment(taId: string) {
     const ta = this.taskAssignments().find((t) => t.id === taId)!;
     const e = this.getEntry(ta.backlogEntryId)!;
@@ -845,13 +1054,16 @@ export class AppStateService {
       ? this.memberPlans().find((p) => p.cycleId === c.id && p.memberId === mid) || null
       : null;
   }
+
   getMemberAssignments(mid: string) {
     const p = this.getMemberPlan(mid);
     return p ? this.taskAssignments().filter((t) => t.memberPlanId === p.id) : [];
   }
+
   getMemberPlanned(mid: string) {
     return this.getMemberAssignments(mid).reduce((s, t) => s + t.committedHours, 0);
   }
+
   freezeErrors() {
     const c = this.activeCycle();
     if (!c) return [];
@@ -877,16 +1089,60 @@ export class AppStateService {
     }
     return errs;
   }
+
+  // ── Freeze — submits all member plans to Azure SQL ────────────────────────────
   confirmFreeze() {
     this.showConfirm(
       'Freeze the Plan?',
       'After this, nobody can change their hours. Team members will only report progress.',
-      () => {
+      async () => {
         if (this.freezeErrors().length > 0) {
           this.showError('Validation failed.');
           return;
         }
         const c = this.activeCycle()!;
+
+        // Submit each member's plan to Azure SQL
+        for (const mid of c.participatingMemberIds) {
+          const member = this.getMember(mid);
+          const assignments = this.getMemberAssignments(mid);
+          if (!member?.dbId || !c.dbId) continue;
+
+          const entries = assignments
+            .map((ta) => {
+              const entry = this.getEntry(ta.backlogEntryId);
+              return {
+                backlogItemId: entry?.dbId || 0,
+                plannedHours: ta.committedHours,
+              };
+            })
+            .filter((e) => e.backlogItemId > 0);
+
+          if (entries.length === 0) continue;
+
+          try {
+            const res = await firstValueFrom(
+              this.http.post<any>(`${this.api}/Plan/submit`, {
+                memberId: member.dbId,
+                weekCycleId: c.dbId,
+                entries,
+              }),
+            );
+            // Store dbIds for plan entries so we can update progress later
+            if (res?.planEntries) {
+              res.planEntries.forEach((pe: any, i: number) => {
+                if (assignments[i]) {
+                  this.taskAssignments.update((ts) =>
+                    ts.map((t) => (t.id === assignments[i].id ? { ...t, dbId: pe.id } : t)),
+                  );
+                }
+              });
+            }
+          } catch (err: any) {
+            console.error('Failed to submit plan for', member.name, err);
+          }
+        }
+
         this.planningCycles.update((cs) =>
           cs.map((x) => (x.id === c.id ? { ...x, state: 'FROZEN' } : x)),
         );
@@ -897,6 +1153,7 @@ export class AppStateService {
       'Yes, Freeze It',
     );
   }
+
   confirmCancelPlanning() {
     this.showConfirm(
       'Cancel Planning?',
@@ -935,6 +1192,7 @@ export class AppStateService {
     );
   }
 
+  // ── Progress ──────────────────────────────────────────────────────────────────
   myFrozenAssignments() {
     const c = this.frozenCycle();
     if (!c) return [];
@@ -946,15 +1204,18 @@ export class AppStateService {
     const order: any = { BLOCKED: 0, IN_PROGRESS: 1, NOT_STARTED: 2, COMPLETED: 3 };
     return [...a].sort((x, y) => (order[x.progressStatus] || 9) - (order[y.progressStatus] || 9));
   }
+
   myCompletedHours() {
     return this.myFrozenAssignments().reduce((s, t) => s + t.hoursCompleted, 0);
   }
+
   startProgressUpdate(ta: TaskAssignment) {
     this.progressTA.set(ta);
     this.progForm.set({ hours: ta.hoursCompleted, status: ta.progressStatus, note: '' });
     this.progError.set('');
     this.progressModal.set(true);
   }
+
   allowedStatuses() {
     const ta = this.progressTA();
     if (!ta) return [];
@@ -966,7 +1227,8 @@ export class AppStateService {
     };
     return map[ta.progressStatus] || [];
   }
-  submitProgress() {
+
+  async submitProgress() {
     this.progError.set('');
     const f = this.progForm();
     const ta = this.progressTA()!;
@@ -988,6 +1250,31 @@ export class AppStateService {
       this.progError.set('Please set this to "In Progress" first.');
       return;
     }
+
+    // Map status string to progress percent for backend
+    const progressPercent =
+      status === 'COMPLETED'
+        ? 100
+        : status === 'IN_PROGRESS'
+          ? Math.max(f.hours > 0 ? 50 : 10, 0)
+          : status === 'BLOCKED'
+            ? 0
+            : 0;
+
+    // ── Persist progress to Azure SQL ─────────────────────────────────────────
+    if (ta.dbId) {
+      try {
+        await firstValueFrom(
+          this.http.put(`${this.api}/Plan/progress/${ta.dbId}`, {
+            progressPercent,
+            actualHours: f.hours,
+          }),
+        );
+      } catch {
+        /* continue with local */
+      }
+    }
+
     this.progressUpdates.update((ps) => [
       ...ps,
       {
@@ -1012,13 +1299,16 @@ export class AppStateService {
     this.showToast('Progress saved!');
   }
 
+  // ── Dashboard ─────────────────────────────────────────────────────────────────
   viewDashboard() {
     this.dashCycleId.set(this.activeCycle()?.id || null);
     this.view.set('dashboard');
   }
+
   dashCycle() {
     return this.planningCycles().find((c) => c.id === this.dashCycleId()) || null;
   }
+
   dashAllAssignments() {
     const c = this.dashCycle();
     if (!c) return [];
@@ -1027,6 +1317,7 @@ export class AppStateService {
       .map((p) => p.id);
     return this.taskAssignments().filter((t) => pids.includes(t.memberPlanId));
   }
+
   dashCapacity() {
     return this.dashCycle()?.teamCapacity || 0;
   }
@@ -1039,27 +1330,32 @@ export class AppStateService {
   dashBlockedTasks() {
     return this.dashAllAssignments().filter((t) => t.progressStatus === 'BLOCKED').length;
   }
+
   getDashCatBudget(cat: string) {
     const c = this.dashCycle();
     if (!c) return 0;
     const a = this.categoryAllocations().find((x) => x.cycleId === c.id && x.category === cat);
     return a ? a.budgetHours : 0;
   }
+
   dashCatCompleted(cat: string) {
     return this.dashAllAssignments()
       .filter((t) => this.getEntry(t.backlogEntryId)?.category === cat)
       .reduce((s, t) => s + t.hoursCompleted, 0);
   }
+
   dashCatAssignments(cat: string) {
     return this.dashAllAssignments().filter(
       (t) => this.getEntry(t.backlogEntryId)?.category === cat,
     );
   }
+
   getAssignMember(ta: TaskAssignment | null) {
     if (!ta) return null;
     const p = this.memberPlans().find((pp) => pp.id === ta.memberPlanId);
     return p?.memberId || null;
   }
+
   dashMemberCompleted(mid: string) {
     const c = this.dashCycle();
     const p = this.memberPlans().find((pp) => pp.cycleId === c?.id && pp.memberId === mid);
@@ -1069,21 +1365,26 @@ export class AppStateService {
           .reduce((s, t) => s + t.hoursCompleted, 0)
       : 0;
   }
+
   dashMemberAssignments(mid: string) {
     const c = this.dashCycle();
     const p = this.memberPlans().find((pp) => pp.cycleId === c?.id && pp.memberId === mid);
     return p ? this.taskAssignments().filter((t) => t.memberPlanId === p.id) : [];
   }
+
   dashMemberBlocked(mid: string) {
     return this.dashMemberAssignments(mid).some((t) => t.progressStatus === 'BLOCKED');
   }
+
   dashMemberAllDone(mid: string) {
     const a = this.dashMemberAssignments(mid);
     return a.length > 0 && a.every((t) => t.progressStatus === 'COMPLETED');
   }
+
   allEntryAssignments(eid: string) {
     return this.dashAllAssignments().filter((t) => t.backlogEntryId === eid);
   }
+
   taskProgressHistory(taId: string | undefined) {
     if (!taId) return [];
     return this.progressUpdates()
@@ -1091,6 +1392,7 @@ export class AppStateService {
       .sort((a, b) => b.timestamp.localeCompare(a.timestamp));
   }
 
+  // ── Finish week ───────────────────────────────────────────────────────────────
   confirmFinishWeek() {
     const c = this.activeCycle();
     if (!c || c.state !== 'FROZEN') return;
@@ -1147,6 +1449,7 @@ export class AppStateService {
       .sort((a, b) => b.planningDate.localeCompare(a.planningDate));
   }
 
+  // ── Export / Import / Seed / Reset ───────────────────────────────────────────
   exportData() {
     const data = {
       appName: 'WeeklyPlanTracker',
@@ -1177,6 +1480,7 @@ export class AppStateService {
     URL.revokeObjectURL(a.href);
     this.showToast('Your data was saved to a file.');
   }
+
   handleImportFile(ev: Event) {
     this.importError.set('');
     this.importData.set(null);
@@ -1206,6 +1510,7 @@ export class AppStateService {
     };
     reader.readAsText(f);
   }
+
   executeImport() {
     if (!this.importData()) return;
     const d = this.importData().data;
@@ -1229,138 +1534,126 @@ export class AppStateService {
     this.showConfirm(
       'Seed Sample Data?',
       'This will add sample team members, backlog items, and a planning cycle. Existing data will not be erased.',
-      () => {
-        const m1 = {
+      async () => {
+        const makeM = (name: string, isLead: boolean) => ({
           id: uid(),
-          name: 'Alice Chen',
-          isLead: true,
+          name,
+          isLead,
           isActive: true,
           createdAt: new Date().toISOString(),
-        };
-        const m2 = {
-          id: uid(),
-          name: 'Bob Martinez',
-          isLead: false,
-          isActive: true,
-          createdAt: new Date().toISOString(),
-        };
-        const m3 = {
-          id: uid(),
-          name: 'Carol Singh',
-          isLead: false,
-          isActive: true,
-          createdAt: new Date().toISOString(),
-        };
-        const m4 = {
-          id: uid(),
-          name: 'Dave Kim',
-          isLead: false,
-          isActive: true,
-          createdAt: new Date().toISOString(),
-        };
-        this.teamMembers.set([m1, m2, m3, m4]);
-        this.backlogEntries.set([
+        });
+        const m1 = makeM('Alice Chen', true);
+        const m2 = makeM('Bob Martinez', false);
+        const m3 = makeM('Carol Singh', false);
+        const m4 = makeM('Dave Kim', false);
+        const members = [m1, m2, m3, m4];
+
+        // Persist to Azure SQL
+        for (const m of members) {
+          try {
+            const res = await firstValueFrom(
+              this.http.post<any>(`${this.api}/Members`, { name: m.name, isLead: m.isLead }),
+            );
+            (m as any).dbId = res.id;
+          } catch {
+            /* continue */
+          }
+        }
+
+        const backlog = [
           {
-            id: uid(),
             title: 'Customer onboarding redesign',
             description: 'Revamp the onboarding flow.',
             category: 'CLIENT_FOCUSED',
-            status: 'AVAILABLE',
             estimatedEffort: 12,
-            createdBy: m1.id,
-            createdAt: new Date().toISOString(),
           },
           {
-            id: uid(),
             title: 'Fix billing invoice formatting',
             description: 'Some invoices show wrong currency format.',
             category: 'CLIENT_FOCUSED',
-            status: 'AVAILABLE',
             estimatedEffort: 4,
-            createdBy: m1.id,
-            createdAt: new Date().toISOString(),
           },
           {
-            id: uid(),
             title: 'Customer feedback dashboard',
             description: 'Build a dashboard showing NPS scores.',
             category: 'CLIENT_FOCUSED',
-            status: 'AVAILABLE',
             estimatedEffort: 16,
-            createdBy: m2.id,
-            createdAt: new Date().toISOString(),
           },
           {
-            id: uid(),
             title: 'Migrate database to PostgreSQL 16',
             description: 'Upgrade from PG 14 to PG 16.',
             category: 'TECH_DEBT',
-            status: 'AVAILABLE',
             estimatedEffort: 20,
-            createdBy: m1.id,
-            createdAt: new Date().toISOString(),
           },
           {
-            id: uid(),
             title: 'Remove deprecated API endpoints',
             description: 'Clean up v1 API routes.',
             category: 'TECH_DEBT',
-            status: 'AVAILABLE',
             estimatedEffort: 8,
-            createdBy: m3.id,
-            createdAt: new Date().toISOString(),
           },
           {
-            id: uid(),
             title: 'Add unit tests for payment module',
             description: 'Coverage is below 50%.',
             category: 'TECH_DEBT',
-            status: 'AVAILABLE',
             estimatedEffort: 10,
-            createdBy: m2.id,
-            createdAt: new Date().toISOString(),
           },
           {
-            id: uid(),
             title: 'Experiment with LLM-based search',
             description: 'Prototype semantic search.',
             category: 'R_AND_D',
-            status: 'AVAILABLE',
             estimatedEffort: 15,
-            createdBy: m1.id,
-            createdAt: new Date().toISOString(),
           },
           {
-            id: uid(),
             title: 'Evaluate new caching strategy',
             description: 'Compare Redis Cluster vs Memcached.',
             category: 'R_AND_D',
-            status: 'AVAILABLE',
             estimatedEffort: 6,
-            createdBy: m4.id,
-            createdAt: new Date().toISOString(),
           },
           {
-            id: uid(),
             title: 'Build internal CLI tool',
             description: 'A command-line tool for common dev tasks.',
             category: 'R_AND_D',
-            status: 'AVAILABLE',
             estimatedEffort: 8,
-            createdBy: m3.id,
-            createdAt: new Date().toISOString(),
           },
           {
-            id: uid(),
             title: 'Client SSO integration',
             description: 'Support SAML-based single sign-on.',
             category: 'CLIENT_FOCUSED',
-            status: 'AVAILABLE',
             estimatedEffort: 18,
+          },
+        ];
+
+        const backlogEntries: BacklogEntry[] = [];
+        for (const b of backlog) {
+          const entry: BacklogEntry = {
+            id: uid(),
+            title: b.title,
+            description: b.description,
+            category: b.category,
+            status: 'AVAILABLE',
+            estimatedEffort: b.estimatedEffort,
             createdBy: m1.id,
             createdAt: new Date().toISOString(),
-          },
-        ]);
+          };
+          try {
+            const res = await firstValueFrom(
+              this.http.post<any>(`${this.api}/backlog`, {
+                title: b.title,
+                description: b.description,
+                category: catToInt(b.category),
+                isActive: true,
+                estimatedHours: b.estimatedEffort,
+              }),
+            );
+            entry.dbId = res.id;
+          } catch {
+            /* continue */
+          }
+          backlogEntries.push(entry);
+        }
+
+        this.teamMembers.set(members);
+        this.backlogEntries.set(backlogEntries);
         this.planningCycles.set([]);
         this.categoryAllocations.set([]);
         this.memberPlans.set([]);

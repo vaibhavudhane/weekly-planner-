@@ -774,19 +774,28 @@ export class AppStateService {
 
     const c = this.activeCycle()!;
 
-    // Update percentages in Azure SQL
-    if (c.dbId) {
+    // Update percentages in Azure SQL using the cycle's own dbId
+    const cycleDbId = c.dbId;
+    if (cycleDbId) {
       try {
+        console.log(`Setting percentages for WeekCycle dbId=${cycleDbId}`);
         await firstValueFrom(
-          this.http.put(`${this.api}/WeekCycle/${c.dbId}/percentages`, {
+          this.http.put(`${this.api}/WeekCycle/${cycleDbId}/percentages`, {
             cat1: parseInt(f.pctClient),
             cat2: parseInt(f.pctTech),
             cat3: parseInt(f.pctRD),
           }),
         );
-      } catch {
-        /* continue */
+        console.log(`Percentages set successfully for WeekCycle dbId=${cycleDbId}`);
+      } catch (err: any) {
+        console.error(
+          `Failed to set percentages for WeekCycle dbId=${cycleDbId}:`,
+          err?.status,
+          err?.error,
+        );
       }
+    } else {
+      console.warn('No dbId on cycle — percentages not persisted to backend');
     }
 
     this.planningCycles.update((cs) =>
@@ -872,6 +881,21 @@ export class AppStateService {
       .reduce((s, t) => s + t.committedHours, 0);
   }
 
+  // Per-member category budget — backend enforces each member <= categoryPercent% of 30h
+  getMyMemberCatBudget(cat: string) {
+    const c = this.activeCycle();
+    if (!c) return 30;
+    const alloc = this.categoryAllocations().find((a) => a.cycleId === c.id && a.category === cat);
+    if (!alloc) return 30;
+    return Math.round(((30 * alloc.percentage) / 100) * 2) / 2;
+  }
+
+  getMyMemberCatClaimed(cat: string) {
+    return this.myAssignments()
+      .filter((t) => this.getEntry(t.backlogEntryId)?.category === cat)
+      .reduce((s, t) => s + t.committedHours, 0);
+  }
+
   toggleReady() {
     const p = this.myPlan();
     if (p) {
@@ -940,6 +964,19 @@ export class AppStateService {
       );
       return;
     }
+    // Per-member category limit (backend enforces this too)
+    const myMemberCatRem =
+      this.getMyMemberCatBudget(e.category) - this.getMyMemberCatClaimed(e.category);
+    if (h > myMemberCatRem) {
+      this.claimError.set(
+        'Your personal ' +
+          this.catLabel(e.category) +
+          ' limit only has ' +
+          myMemberCatRem +
+          ' hours left.',
+      );
+      return;
+    }
     const p = this.myPlan()!;
     this.taskAssignments.update((ts) => [
       ...ts,
@@ -996,6 +1033,19 @@ export class AppStateService {
             this.catLabel(e.category) +
             ' budget only has ' +
             (catRem + oldH) +
+            ' hours left.',
+        );
+        return;
+      }
+      // Per-member category limit (backend enforces this too)
+      const myMemberCatRem =
+        this.getMyMemberCatBudget(e.category) - this.getMyMemberCatClaimed(e.category);
+      if (delta > myMemberCatRem) {
+        this.assignError.set(
+          'Your personal ' +
+            this.catLabel(e.category) +
+            ' limit only has ' +
+            (myMemberCatRem + oldH) +
             ' hours left.',
         );
         return;
@@ -1121,6 +1171,16 @@ export class AppStateService {
           if (entries.length === 0) continue;
 
           try {
+            console.log(
+              'Submitting plan for',
+              member.name,
+              'dbId=',
+              member.dbId,
+              'weekCycleId=',
+              c.dbId,
+              'entries=',
+              JSON.stringify(entries),
+            );
             const res = await firstValueFrom(
               this.http.post<any>(`${this.api}/Plan/submit`, {
                 memberId: member.dbId,
@@ -1128,18 +1188,24 @@ export class AppStateService {
                 entries,
               }),
             );
-            // Store dbIds for plan entries so we can update progress later
-            if (res?.planEntries) {
-              res.planEntries.forEach((pe: any, i: number) => {
-                if (assignments[i]) {
-                  this.taskAssignments.update((ts) =>
-                    ts.map((t) => (t.id === assignments[i].id ? { ...t, dbId: pe.id } : t)),
-                  );
-                }
-              });
-            }
+            console.log('Plan submitted for', member.name, ':', JSON.stringify(res));
+            // Store dbIds for plan entries — handle both camelCase and PascalCase from backend
+            const planEntries = res?.planEntries || res?.PlanEntries || [];
+            planEntries.forEach((pe: any) => {
+              const peBacklogId = pe.backlogItemId ?? pe.BacklogItemId;
+              const peId = pe.id ?? pe.Id;
+              const match = assignments.find(
+                (ta) => this.getEntry(ta.backlogEntryId)?.dbId === peBacklogId,
+              );
+              if (match) {
+                this.taskAssignments.update((ts) =>
+                  ts.map((t) => (t.id === match.id ? { ...t, dbId: peId } : t)),
+                );
+              }
+            });
           } catch (err: any) {
-            console.error('Failed to submit plan for', member.name, err);
+            const errBody = err?.error?.error || err?.message || String(err);
+            console.error('Failed to submit plan for', member.name, ':', errBody);
           }
         }
 

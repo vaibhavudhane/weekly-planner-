@@ -1,7 +1,7 @@
 name: CD — Deploy to Azure
 
 on:
-  workflow_dispatch: # manual only — uncomment push trigger on Day 4 after Azure setup
+  workflow_dispatch:
   # push:
   #   branches:
   #     - main
@@ -31,11 +31,15 @@ jobs:
       - name: Publish API
         run: dotnet publish WeeklyPlanner.API/WeeklyPlanner.API.csproj -c Release -o ./publish
 
+      - name: Login to Azure
+        uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
       - name: Deploy to Azure App Service
         uses: azure/webapps-deploy@v3
         with:
           app-name: "weekly-planner-api-v2"
-          publish-profile: ${{ secrets.AZURE_API_PUBLISH_PROFILE }}
           package: ./publish
 
   deploy-ui:

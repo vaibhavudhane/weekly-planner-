@@ -1,4 +1,4 @@
 export const environment = {
   production: false,
-  apiUrl: 'https://weeklyplanner-api-vaibhav.azurewebsites.net/api',
+  apiUrl: 'https://weekly-planner-api-v2.azurewebsites.net/api',
 };

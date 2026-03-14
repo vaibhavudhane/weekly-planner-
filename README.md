@@ -1,15 +1,15 @@
 # 📅 Weekly Plan Tracker
 
-> A full-stack weekly planning tool for development teams — built with .NET 8, SQL Server, and Angular 21.
+> A full-stack weekly planning tool for development teams — built with .NET 8, Azure SQL, and Angular 21.
 
 ---
 
 ## 🌐 Live Deployment
 
-|                 | URL                                                                                                          |
-| --------------- | ------------------------------------------------------------------------------------------------------------ |
-| 🖥️ **Frontend** | [https://kind-flower-09f143d00.1.azurestaticapps.net/](https://kind-flower-09f143d00.1.azurestaticapps.net/) |
-| 📖 **Swagger**  | [/swagger](https://weeklyplanner-api-vaibhav.azurewebsites.net/swagger)                                      |
+|                 | URL                                                                                                                |
+| --------------- | ------------------------------------------------------------------------------------------------------------------ |
+| 🖥️ **Frontend** | [https://agreeable-hill-0f22b4400.4.azurestaticapps.net](https://agreeable-hill-0f22b4400.4.azurestaticapps.net)   |
+| 📖 **Swagger**  | [https://weekly-planner-api-v2.azurewebsites.net/swagger](https://weekly-planner-api-v2.azurewebsites.net/swagger) |
 
 ---
 
@@ -19,6 +19,8 @@ Weekly Plan Tracker helps development teams plan and track their weekly work wit
 
 A **Team Lead** sets up a planning week by choosing a Tuesday date and splitting the team's capacity across three categories: **Client Focused**, **Tech Debt**, and **R&D**. Each team member then picks backlog items and plans their hours within the allocated budget. The lead can view an aggregated dashboard across all members and freeze the week when planning is complete. Once frozen, members can only update progress — no hour changes allowed.
 
+All data is persisted to **Azure SQL** in real time — members, backlog items, week cycles, plans, and progress updates are all stored in the cloud database.
+
 ---
 
 ## 🛠️ Tech Stack
@@ -27,13 +29,15 @@ A **Team Lead** sets up a planning week by choosing a Tuesday date and splitting
 | -------------------- | ---------------------------------------------- |
 | **Backend**          | .NET 8, C#, ASP.NET Core Web API               |
 | **ORM**              | Entity Framework Core 8                        |
-| **Database**         | SQL Server (Azure SQL)                         |
+| **Database**         | Azure SQL (SQL Server)                         |
 | **Frontend**         | Angular 21, TypeScript                         |
-| **HTTP**             | Angular HttpClient                             |
+| **State Management** | Angular Signals + localStorage                 |
+| **HTTP**             | Angular HttpClient + firstValueFrom (RxJS)     |
 | **Backend Tests**    | xUnit, FluentAssertions, Moq, EF Core InMemory |
 | **Frontend Tests**   | Vitest v4, Angular Testing Library             |
-| **Backend Hosting**  | Azure App Service                              |
+| **Backend Hosting**  | Azure App Service (Linux, .NET 8)              |
 | **Frontend Hosting** | Azure Static Web Apps                          |
+| **CI/CD**            | GitHub Actions                                 |
 
 ---
 
@@ -43,24 +47,67 @@ A **Team Lead** sets up a planning week by choosing a Tuesday date and splitting
 ┌─────────────────────────────────────────────────────────┐
 │                    Angular 21 SPA                        │
 │           (Azure Static Web Apps)                        │
+│                                                          │
+│  AppStateService — manages full workflow state           │
+│  localStorage    — working state between sessions        │
 └────────────────────────┬────────────────────────────────┘
                          │ HTTPS REST (JSON)
-                         │ X-Role header (lead / member)
+                         │ X-Is-Lead header (lead / member)
 ┌────────────────────────▼────────────────────────────────┐
 │               ASP.NET Core Web API (.NET 8)              │
 │                  (Azure App Service)                     │
 │                                                          │
-│  Controllers → Interfaces (Core)                        │
+│  Controllers → Interfaces (Core)                         │
 │       ↓                                                  │
-│  Infrastructure (EF Core + SQL Server)                  │
+│  Infrastructure (EF Core + Azure SQL)                   │
+└─────────────────────────────────────────────────────────┘
+                         │
+┌────────────────────────▼────────────────────────────────┐
+│                    Azure SQL Database                    │
+│   Members | BacklogItems | WeekCycles                   │
+│   WeeklyPlans | PlanEntries                             │
 └─────────────────────────────────────────────────────────┘
 
 Layers:
   WeeklyPlanner.Core           — Models, Interfaces
   WeeklyPlanner.Infrastructure — EF Core DbContext, Service implementations
   WeeklyPlanner.API            — Controllers, DTOs, Middleware, Program.cs
-  WeeklyPlanner.Tests          — Unit + Integration Tests
+  WeeklyPlanner.Tests          — Unit + Integration Tests (101 tests, all passing)
 ```
+
+---
+
+## 🔄 Planning Workflow
+
+```
+SETUP → PLANNING → FROZEN → COMPLETED
+```
+
+| State         | Who acts    | What happens                                        |
+| ------------- | ----------- | --------------------------------------------------- |
+| **SETUP**     | Team Lead   | Creates week cycle, selects members, sets % budgets |
+| **PLANNING**  | All members | Each member claims backlog items and assigns hours  |
+| **FROZEN**    | All members | Plan is locked — members report progress only       |
+| **COMPLETED** | Team Lead   | Week is closed, incomplete items return to backlog  |
+
+---
+
+## 💾 Backend Integration
+
+All key actions persist to Azure SQL in real time:
+
+| Frontend Action      | API Call                                  |
+| -------------------- | ----------------------------------------- |
+| Setup members        | `POST /api/Members` for each member       |
+| Add backlog item     | `POST /api/Backlog`                       |
+| Edit backlog item    | `PUT /api/Backlog/{id}`                   |
+| Archive backlog item | `PUT /api/Backlog/{id}` (isActive: false) |
+| Start new week       | `POST /api/WeekCycle`                     |
+| Open planning        | `PUT /api/WeekCycle/{id}/percentages`     |
+| Freeze plan          | `POST /api/Plan/submit` per member        |
+| Update progress      | `PUT /api/Plan/progress/{entryId}`        |
+
+> LocalStorage acts as the working state layer — Azure SQL is the persistence layer. All `dbId` values are stored alongside local UUIDs to enable accurate API calls.
 
 ---
 
@@ -71,45 +118,44 @@ Weekly-Planner/
 │
 ├── WeeklyPlanner.Core/                        # Domain layer
 │   ├── Interfaces/
-│   │   ├── IBacklogService.cs                 # Backlog CRUD contract
-│   │   ├── IPlanService.cs                    # Plan submit/progress contract
-│   │   └── IWeekCycleService.cs               # Week cycle contract
+│   │   ├── IBacklogService.cs
+│   │   ├── IPlanService.cs
+│   │   └── IWeekCycleService.cs
 │   └── Models/
-│       ├── BacklogItem.cs                     # Task in product backlog (Category 1/2/3)
-│       ├── Member.cs                          # Team member or lead (IsLead flag)
-│       ├── PlanEntry.cs                       # One task inside a weekly plan
-│       ├── WeekCycle.cs                       # One planning week (Tue–Mon cycle)
-│       └── WeeklyPlan.cs                      # A member's full plan for a week
+│       ├── BacklogItem.cs
+│       ├── Member.cs
+│       ├── PlanEntry.cs
+│       ├── WeekCycle.cs
+│       └── WeeklyPlan.cs
 │
 ├── WeeklyPlanner.Infrastructure/              # Data + service implementations
 │   ├── Data/
-│   │   ├── AppDbContext.cs                    # EF Core DbContext
-│   │   └── AppDbContextFactory.cs             # Design-time factory for migrations
+│   │   ├── AppDbContext.cs
+│   │   └── AppDbContextFactory.cs
 │   ├── Migrations/
-│   │   └── 20260302093805_InitialCreate.cs    # Initial schema migration
+│   │   └── 20260302093805_InitialCreate.cs
 │   └── Services/
-│       ├── BacklogService.cs                  # IBacklogService implementation
-│       ├── PlanService.cs                     # IPlanService implementation
-│       └── WeekCycleService.cs                # IWeekCycleService implementation
+│       ├── BacklogService.cs
+│       ├── PlanService.cs
+│       └── WeekCycleService.cs
 │
 ├── WeeklyPlanner.API/                         # Presentation layer
 │   ├── Controllers/
-│   │   ├── BacklogController.cs               # GET/POST/PUT/DELETE /api/Backlog
-│   │   ├── MembersController.cs               # GET/POST /api/Members
-│   │   ├── PlanController.cs                  # Submit plan, progress, dashboard
-│   │   └── WeekCycleController.cs             # Week cycle + set percentages (lead)
+│   │   ├── BacklogController.cs
+│   │   ├── MembersController.cs
+│   │   ├── PlanController.cs
+│   │   └── WeekCycleController.cs
 │   ├── DTOs/
-│   │   ├── PercentageDto.cs                   # Cat1/2/3 percent payload
-│   │   ├── ProgressDto.cs                     # Progress percent + actual hours
-│   │   └── SubmitPlanDto.cs                   # Member + week + entries payload
+│   │   ├── PercentageDto.cs
+│   │   ├── ProgressDto.cs
+│   │   └── SubmitPlanDto.cs
 │   ├── Helpers/
-│   │   └── RequestContext.cs                  # Reads X-Role header for lead check
+│   │   └── RequestContext.cs
 │   ├── Middleware/
-│   │   └── ExceptionMiddleware.cs             # Global error handling
-│   ├── appsettings.json                       # App configuration
-│   └── Program.cs                             # DI, CORS, Swagger, EF, Middleware
+│   │   └── ExceptionMiddleware.cs
+│   └── Program.cs
 │
-├── WeeklyPlanner.Tests/                       # Test suite (xUnit)
+├── WeeklyPlanner.Tests/                       # Test suite (101 tests, all passing)
 │   ├── BacklogControllerTests.cs
 │   ├── BacklogServiceTests.cs
 │   ├── CoverageGapTests.cs
@@ -122,37 +168,19 @@ Weekly-Planner/
 │   └── WeekCycleServiceTests.cs
 │
 ├── weekly-planner-ui/                         # Angular 21 SPA
-│   ├── src/
-│   │   ├── app/
-│   │   │   ├── guards/
-│   │   │   │   └── lead.guard.ts              # Route guard — lead-only pages
-│   │   │   ├── interceptors/
-│   │   │   │   └── role.interceptor.ts        # Attaches X-Role header to all requests
-│   │   │   ├── models/
-│   │   │   │   └── index.ts                   # Member, BacklogItem, WeekCycle,
-│   │   │   │                                  # PlanEntry, WeeklyPlan interfaces
-│   │   │   ├── services/
-│   │   │   │   ├── app-state.service.ts       # Global toast / error state
-│   │   │   │   ├── backlog.service.ts         # Backlog API calls
-│   │   │   │   ├── plan.service.ts            # Plan submit / progress API calls
-│   │   │   │   ├── role.service.ts            # Lead / member role management
-│   │   │   │   └── week-cycle.service.ts      # Week cycle API calls
-│   │   │   ├── app.config.ts                  # Angular providers + HTTP setup
-│   │   │   ├── app.routes.ts                  # Client-side routing
-│   │   │   └── app.ts                         # Root component
-│   │   ├── environments/
-│   │   │   ├── environment.ts                 # Dev: http://localhost:5162/api
-│   │   │   └── environment.prod.ts            # Prod: Azure API URL
-│   │   ├── index.html
-│   │   ├── main.ts
-│   │   └── styles.scss                        # Global styles
-│   ├── staticwebapp.config.json               # Azure Static Web Apps routing config
-│   ├── angular.json
-│   ├── vitest.config.ts                       # Vitest test configuration
-│   ├── tsconfig.json
-│   └── package.json
+│   └── src/app/
+│       ├── services/
+│       │   └── app-state.service.ts           # Full workflow + Azure SQL integration
+│       ├── models/index.ts
+│       └── environments/
+│           ├── environment.ts                 # Dev API URL
+│           └── environment.prod.ts            # Prod: Azure API URL
 │
-└── WeeklyPlanner.sln                          # Solution file
+├── .github/workflows/
+│   ├── ci.yml                                 # Build + test on every PR
+│   └── cd.yml                                 # Deploy to Azure on main
+│
+└── WeeklyPlanner.sln
 ```
 
 ---
@@ -168,13 +196,13 @@ Weekly-Planner/
 
 ### Backlog Items
 
-| Method | Endpoint            | Description              |
-| ------ | ------------------- | ------------------------ |
-| GET    | `/api/Backlog`      | Get all backlog items    |
-| GET    | `/api/Backlog/{id}` | Get a backlog item by ID |
-| POST   | `/api/Backlog`      | Create a backlog item    |
-| PUT    | `/api/Backlog/{id}` | Update a backlog item    |
-| DELETE | `/api/Backlog/{id}` | Delete a backlog item    |
+| Method | Endpoint            | Description           |
+| ------ | ------------------- | --------------------- |
+| GET    | `/api/Backlog`      | Get all backlog items |
+| GET    | `/api/Backlog/{id}` | Get by ID             |
+| POST   | `/api/Backlog`      | Create backlog item   |
+| PUT    | `/api/Backlog/{id}` | Update backlog item   |
+| DELETE | `/api/Backlog/{id}` | Delete backlog item   |
 
 ### Week Cycles
 
@@ -190,14 +218,14 @@ Weekly-Planner/
 | Method | Endpoint                                 | Description                          |
 | ------ | ---------------------------------------- | ------------------------------------ |
 | GET    | `/api/Plan/{memberId}/{weekCycleId}`     | Get a member's plan for a week       |
-| POST   | `/api/Plan/submit`                       | Submit a member's plan               |
+| POST   | `/api/Plan/submit`                       | Submit and freeze a member's plan    |
 | PUT    | `/api/Plan/progress/{entryId}`           | Update progress on a plan entry      |
 | GET    | `/api/Plan/week/{weekCycleId}/all`       | Get all plans for a week             |
 | GET    | `/api/Plan/week/{weekCycleId}/dashboard` | **Lead only** — aggregated dashboard |
 | DELETE | `/api/Plan/{memberId}/{weekCycleId}`     | Delete a member's plan (dev only)    |
 | DELETE | `/api/Plan/admin/reset`                  | Wipe all plans (dev only)            |
 
-> 🔒 **Lead-only endpoints** require the `X-Role: lead` header, injected automatically by Angular's `RoleInterceptor`.
+> 🔒 **Lead-only endpoints** require the `X-Is-Lead: true` header, sent automatically by the frontend when the current user is a Team Lead.
 
 ---
 
@@ -205,13 +233,14 @@ Weekly-Planner/
 
 ### BacklogItem
 
-| Field         | Type   | Description                                |
-| ------------- | ------ | ------------------------------------------ |
-| `Id`          | int    | Primary key                                |
-| `Title`       | string | Task title                                 |
-| `Description` | string | Task description                           |
-| `Category`    | int    | 1 = Client Focused, 2 = Tech Debt, 3 = R&D |
-| `IsActive`    | bool   | Soft delete flag                           |
+| Field            | Type    | Description                                |
+| ---------------- | ------- | ------------------------------------------ |
+| `Id`             | int     | Primary key                                |
+| `Title`          | string  | Task title                                 |
+| `Description`    | string  | Task description                           |
+| `Category`       | int     | 1 = Client Focused, 2 = Tech Debt, 3 = R&D |
+| `IsActive`       | bool    | Soft delete flag                           |
+| `EstimatedHours` | decimal | Optional effort estimate                   |
 
 ### Member
 
@@ -227,12 +256,35 @@ Weekly-Planner/
 | ------------------ | -------- | --------------------------------- |
 | `Id`               | int      | Primary key                       |
 | `PlanningDate`     | DateTime | Must be a Tuesday                 |
-| `WeekStartDate`    | DateTime | Wednesday                         |
+| `WeekStartDate`    | DateTime | Wednesday after planning date     |
 | `WeekEndDate`      | DateTime | Following Monday                  |
 | `Category1Percent` | decimal  | Client Focused %                  |
 | `Category2Percent` | decimal  | Tech Debt %                       |
 | `Category3Percent` | decimal  | R&D % (all three must sum to 100) |
 | `IsActive`         | bool     | Active cycle flag                 |
+
+### WeeklyPlan
+
+| Field         | Type     | Description                  |
+| ------------- | -------- | ---------------------------- |
+| `Id`          | int      | Primary key                  |
+| `MemberId`    | int      | FK → Member                  |
+| `WeekCycleId` | int      | FK → WeekCycle               |
+| `IsFrozen`    | bool     | true after plan is submitted |
+| `FrozenAt`    | DateTime | Timestamp of freeze          |
+| `PlanEntries` | List     | Tasks planned for the week   |
+
+### PlanEntry
+
+| Field             | Type     | Description                       |
+| ----------------- | -------- | --------------------------------- |
+| `Id`              | int      | Primary key                       |
+| `WeeklyPlanId`    | int      | FK → WeeklyPlan                   |
+| `BacklogItemId`   | int      | FK → BacklogItem                  |
+| `PlannedHours`    | decimal  | Committed hours (max 30 total)    |
+| `ProgressPercent` | decimal  | 0–100, updated after freeze       |
+| `ActualHours`     | decimal  | Optional actual time spent        |
+| `LastUpdated`     | DateTime | Timestamp of last progress update |
 
 ---
 
@@ -242,7 +294,7 @@ Weekly-Planner/
 
 - .NET 8 SDK
 - Node.js 20+
-- Angular CLI 21 (`npm install -g @angular/cli`)
+- Angular CLI (`npm install -g @angular/cli`)
 
 ### Backend
 
@@ -257,7 +309,7 @@ dotnet run
 
 ```bash
 cd weekly-planner-ui
-npm install 
+npm install
 ng serve
 # App: http://localhost:4200
 ```
@@ -268,33 +320,32 @@ ng serve
 
 ## 🧪 Running Tests
 
-### Backend
+### Backend (101 tests — all passing)
 
 ```bash
-# From repo root (API must be stopped)
+# From repo root
 dotnet test
 ```
-you can view backend test report at - WeeklyPlanner.Tests/coverage.cobertura.xml
 
 | Test File                     | What it covers                            |
 | ----------------------------- | ----------------------------------------- |
 | `BacklogServiceTests.cs`      | BacklogService CRUD logic                 |
 | `BacklogControllerTests.cs`   | BacklogController HTTP responses          |
-| `PlanServiceTests.cs`         | Plan submit, progress updates, freeze     |
+| `PlanServiceTests.cs`         | Plan submit, progress updates, validation |
 | `PlanControllerTests.cs`      | PlanController endpoints + dashboard      |
 | `WeekCycleServiceTests.cs`    | WeekCycle creation and percentage setting |
 | `WeekCycleControllerTests.cs` | WeekCycleController endpoints             |
 | `MembersControllerTests.cs`   | Members endpoints                         |
 | `ExceptionMiddlewareTests.cs` | Global error handling middleware          |
-| `RequestContextTests.cs`      | X-Role header parsing                     |
+| `RequestContextTests.cs`      | X-Is-Lead header parsing                  |
+| `CoverageGapTests.cs`         | Edge case coverage                        |
 
 ```
-**Coverage:** ~89% line coverage, ~96% branch coverage,
-- 10+ comprehensive test classes
-- 95.77% branch coverage
-- All controllers tested
-- All services tested
-- All core models 100% covered
+✅ 101/101 tests passing
+📊 ~89% line coverage, ~96% branch coverage
+🧪 All controllers tested
+🧪 All services tested
+🧪 All core models 100% covered
 ```
 
 ### Frontend
@@ -303,57 +354,66 @@ you can view backend test report at - WeeklyPlanner.Tests/coverage.cobertura.xml
 cd weekly-planner-ui
 npx vitest run --coverage
 ```
-- 301/301 tests passing (100%)
-- All edge cases tested
-- Stress tested (1000 members, 500 items)
 
-
-| Details | Value |
-|---|---|
-| Test runner | Vitest v4.0.18 |
-| Framework | Angular Testing Library |
-| Test files | `*.spec.ts` co-located with each service |
+```
+✅ 301/301 tests passing (100%)
+⚡ Vitest v4 — fast ESM-native test runner
+🧪 All edge cases tested
+🔥 Stress tested (1000 members, 500 items)
+```
 
 ---
 
 ## 🧠 Key Design Decisions
 
-**1. Role via HTTP Header**
-Instead of authentication, a lightweight `X-Role: lead` header is injected by Angular's `RoleInterceptor` when the selected role is Lead. The API reads this via `RequestContext.IsLead()` to gate lead-only endpoints such as setting category percentages and viewing the dashboard.
+**1. Dual-layer persistence (localStorage + Azure SQL)**
+The frontend uses `localStorage` as the working state layer for a smooth, offline-capable UX. Azure SQL is the persistence layer — data is synced at key workflow moments (setup, backlog save, week creation, freeze, progress update). Local `dbId` fields map frontend UUIDs to backend integer IDs.
 
-**2. Standalone Angular Components**
+**2. Role via HTTP Header**
+Instead of authentication, a lightweight `X-Is-Lead: true` header is sent by the frontend when the current user is the Team Lead. The API reads this via `RequestContext.IsLead()` to gate lead-only endpoints such as setting category percentages and viewing the dashboard.
+
+**3. Per-member category hour enforcement**
+The backend enforces that each member's hours in a category cannot exceed `(categoryPercent / 100) × 30`. The frontend mirrors this validation to prevent failed API calls before they happen.
+
+**4. Plan submitted = immediately frozen**
+On `POST /api/Plan/submit`, the backend immediately sets `IsFrozen = true`. The frontend's multi-step workflow (PLANNING → FROZEN) maps to this: freeze in the UI triggers plan submission to the backend for all participating members.
+
+**5. Standalone Angular Components**
 All Angular components are standalone (no NgModules), following Angular 17+ best practices for simpler dependency management and tree-shaking.
 
-**3. Vitest instead of Karma**
-Vitest was chosen over the default Karma/Jasmine setup for faster test execution and better ESM support with Angular 21.
+**6. Clean Architecture layers**
+The solution is split into Core (interfaces + models), Infrastructure (EF Core + services), and API (controllers) — making services fully unit-testable with mocked dependencies using Moq.
 
-**4. SQL Server for persistence**
-The backend uses SQL Server via Azure SQL, connected through EF Core with connection strings managed via Azure App Service environment variables (`SQLAZURECONNSTR_DefaultConnection`).
-
-**5. Clean Architecture layers**
-The solution is split into Core (interfaces + models), Infrastructure (EF Core + services), and API (controllers) layers — making services fully unit-testable with mocked dependencies using Moq.
-
-**6. EF Core InMemory for tests**
+**7. EF Core InMemory for tests**
 Backend tests use `Microsoft.EntityFrameworkCore.InMemory` to test services and controllers without a real database, keeping tests fast and isolated.
 
 ---
 
-## ⚙️ Deployment
+## ⚙️ CI/CD Pipeline
 
-### Backend — Azure App Service
-Deployed via GitHub Actions on push to `main`. The connection string is stored as an Azure App Service connection string environment variable (`SQLAZURECONNSTR_DefaultConnection`) and resolved automatically at startup.
+### CI (on every push / PR)
 
-### Frontend — Azure Static Web Apps
-```bash
-cd weekly-planner-ui
-npm run build
-````
+```
+Build → Test (101 backend tests) → Coverage report
+```
 
-The `staticwebapp.config.json` handles:
+### CD (on push to main)
 
-- Build output directory: `dist/weekly-planner-ui/browser`
-- SPA routing: all paths fall back to `index.html`
-- Static assets (`.js`, `.css`, `.ico`) served with correct MIME types
+```
+Build API → Deploy to Azure App Service
+Build Angular → Deploy to Azure Static Web Apps
+```
+
+### Azure Resources (centralindia region)
+
+| Resource            | Name                       |
+| ------------------- | -------------------------- |
+| Resource Group      | `weekly-planner-rg`        |
+| SQL Server          | `weekly-planner-sql`       |
+| SQL Database        | `WeeklyPlannerDb`          |
+| App Service Plan    | `weekly-planner-plan` (F1) |
+| Web App (API)       | `weekly-planner-api-v2`    |
+| Static Web App (UI) | `weekly-planner-ui`        |
 
 ---
 
@@ -361,4 +421,6 @@ The `staticwebapp.config.json` handles:
 
 **Vaibhav Udhane**
 
-- Live app: [https://kind-flower-09f143d00.1.azurestaticapps.net/](https://kind-flower-09f143d00.1.azurestaticapps.net/)
+- 🌐 Live app: [https://agreeable-hill-0f22b4400.4.azurestaticapps.net](https://agreeable-hill-0f22b4400.4.azurestaticapps.net)
+- 🔧 API: [https://weekly-planner-api-v2.azurewebsites.net/swagger](https://weekly-planner-api-v2.azurewebsites.net/swagger)
+- 💻 GitHub: [https://github.com/vaibhavudhane/weekly-planner-](https://github.com/vaibhavudhane/weekly-planner-)

@@ -780,11 +780,15 @@ export class AppStateService {
       try {
         console.log(`Setting percentages for WeekCycle dbId=${cycleDbId}`);
         await firstValueFrom(
-          this.http.put(`${this.api}/WeekCycle/${cycleDbId}/percentages`, {
-            cat1: parseInt(f.pctClient),
-            cat2: parseInt(f.pctTech),
-            cat3: parseInt(f.pctRD),
-          }),
+          this.http.put(
+            `${this.api}/WeekCycle/${cycleDbId}/percentages`,
+            {
+              cat1: parseInt(f.pctClient),
+              cat2: parseInt(f.pctTech),
+              cat3: parseInt(f.pctRD),
+            },
+            { headers: { 'X-Is-Lead': 'true' } },
+          ),
         );
         console.log(`Percentages set successfully for WeekCycle dbId=${cycleDbId}`);
       } catch (err: any) {

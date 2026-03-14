@@ -109,7 +109,7 @@ public class WeekCycleControllerTests
             Cat1 = 50, Cat2 = 30, Cat3 = 20
         });
 
-        Assert.IsType<ForbidResult>(result);
+        Assert.IsType<UnauthorizedObjectResult>(result);
         mock.Verify(s => s.SetPercentagesAsync(It.IsAny<int>(), It.IsAny<decimal>(), It.IsAny<decimal>(), It.IsAny<decimal>()), Times.Never);
     }
 
@@ -126,6 +126,6 @@ public class WeekCycleControllerTests
 
         var result = await controller.SetPercentages(1, new PercentageDto { Cat1 = 50, Cat2 = 30, Cat3 = 20 });
 
-        Assert.IsType<ForbidResult>(result);
+       Assert.IsType<UnauthorizedObjectResult>(result);
     }
 }

@@ -59,7 +59,7 @@ public async Task<IActionResult> Submit([FromBody] SubmitPlanDto dto)
     [HttpGet("week/{weekCycleId}/dashboard")]
     public async Task<IActionResult> GetDashboard(int weekCycleId)
     {
-        if (!RequestContext.IsLead(Request)) return Forbid();
+        if (!RequestContext.IsLead(Request)) return Unauthorized(new { error = "Lead access required." });
         var plans = await _svc.GetAllPlansForWeekAsync(weekCycleId);
         var summary = plans.Select(p => new {
             MemberName      = p.Member.Name,

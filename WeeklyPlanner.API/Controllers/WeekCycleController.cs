@@ -27,7 +27,7 @@ public class WeekCycleController : ControllerBase
     [HttpPut("{id}/percentages")]
     public async Task<IActionResult> SetPercentages(int id, [FromBody] PercentageDto dto)
     {
-        if (!RequestContext.IsLead(Request)) return Forbid();
+        if (!RequestContext.IsLead(Request)) return Unauthorized(new { error = "Lead access required." });
         await _svc.SetPercentagesAsync(id, dto.Cat1, dto.Cat2, dto.Cat3);
         return NoContent();
     }

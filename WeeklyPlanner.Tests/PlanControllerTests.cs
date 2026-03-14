@@ -206,7 +206,7 @@ public class PlanControllerTests
 
         var result = await CreateController(mock.Object, CreateDb(), isLead: false).GetDashboard(1);
 
-        Assert.IsType<ForbidResult>(result);
+        Assert.IsType<UnauthorizedObjectResult>(result);
         mock.Verify(s => s.GetAllPlansForWeekAsync(It.IsAny<int>()), Times.Never);
     }
 
@@ -219,7 +219,7 @@ public class PlanControllerTests
 
         var result = await controller.GetDashboard(1);
 
-        Assert.IsType<ForbidResult>(result);
+        Assert.IsType<UnauthorizedObjectResult>(result);
     }
 
     // ── DeletePlan ────────────────────────────────────────────────────────────
